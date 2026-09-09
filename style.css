@@ -1,0 +1,72 @@
+/* ==================== 1. Страница ====================
+   Корпус, LCD и физические кнопки создаются в Three.js.
+   CSS отвечает за фон, доступное управление и модальное окно. */
+:root { color-scheme: dark; --bg:#171a24; --text:#eeece6; --muted:#9299a9; --accent:#b9dca4; --line:#ffffff1c; }
+* { box-sizing:border-box; }
+[hidden] { display:none !important; }
+body { margin:0; min-width:320px; min-height:100svh; font-family:Arial,Helvetica,sans-serif; color:var(--text); background:radial-gradient(ellipse at 50% 43%,#374056 0%,#232a3b 28%,#171a24 68%); }
+body.modal-open { overflow:hidden; }
+button,a { -webkit-tap-highlight-color:transparent; }
+a { color:inherit; text-decoration:none; }
+button { font:inherit; color:inherit; cursor:pointer; }
+button:focus-visible,a:focus-visible { outline:2px solid var(--accent); outline-offset:5px; }
+.page-header { display:flex; align-items:center; gap:24px; margin:0 5%; height:96px; border-bottom:1px solid var(--line); }
+.wordmark { font-size:38px; font-weight:850; letter-spacing:-3px; }
+.wordmark span { font-size:14px; vertical-align:top; letter-spacing:0; margin-left:4px; }
+.page-header p { font-size:10px; letter-spacing:1.8px; line-height:1.6; }
+.page-header p span { color:var(--muted); }
+.telegram-link { margin-left:auto; font-size:14px; border:1px solid var(--line); border-radius:30px; padding:12px 19px; }
+.telegram-link:hover { background:#ffffff0b; }
+main { max-width:1550px; margin:auto; position:relative; }
+.edition { display:flex; justify-content:space-between; padding:25px 5% 0; color:var(--muted); font:10px monospace; letter-spacing:2px; }
+.console-section { position:relative; }
+.stage { height:clamp(510px,69vh,820px); width:100%; }
+#three-container { width:100%; height:100%; transition:transform .65s cubic-bezier(.2,.75,.2,1),filter .65s,opacity .65s; transform-origin:50% 45%; }
+#three-container canvas { display:block; width:100%; height:100%; touch-action:none; outline:none; }
+/* Требуемый «отлёт»: класс включается при переходе в CASES. */
+#three-container.is-background { transform:scale(.72) translateY(-35px); filter:blur(7px); opacity:.33; pointer-events:none; }
+.side-note { position:absolute; top:42%; left:7%; color:#8290a2; letter-spacing:2px; font:11px/1.8 monospace; pointer-events:none; }
+.loading { position:absolute; top:45%; left:0; width:100%; text-align:center; color:var(--accent); font-size:14px; }
+.load-error { position:absolute; width:min(440px,88%); left:50%; top:25%; transform:translateX(-50%); background:#1b2130; border:1px solid #65728b; padding:28px; border-radius:16px; }
+.load-error h1 { font-size:24px; }.load-error p { line-height:1.6; color:var(--muted); }
+.load-error button,.load-error a { display:block; padding:12px; margin-top:12px; background:#303b4e; border:0; border-radius:6px; }
+.instructions { display:flex; align-items:center; justify-content:center; gap:10px; margin-top:-5px; }
+.instructions p { font-size:12px; color:#a6afbd; }
+.status-dot { width:5px; height:5px; border-radius:50%; background:var(--accent); box-shadow:0 0 10px #b9dca46b; }
+.controls { display:flex; gap:8px; justify-content:center; margin:10px 15px 20px; flex-wrap:wrap; }
+.controls button { background:#ffffff05; border:1px solid #ffffff28; border-bottom:3px solid #ffffff28; border-radius:7px; min-width:44px; min-height:44px; padding:10px 14px; font:12px monospace; transition:background .15s,transform .15s; }
+.controls button span { color:#a5aebb; margin-left:6px; font:12px Arial,sans-serif; }
+.controls button:hover { background:#ffffff10; }.controls button:active { transform:translateY(2px); }
+.controls .enter { border-color:#b9dca455; }.controls .enter:hover { background:#b9dca418; }
+.contact-shortcut { display:block; width:fit-content; margin:10px auto 20px; color:var(--accent); font-size:14px; text-decoration:underline; }
+footer { display:flex; justify-content:space-between; gap:20px; margin:25px 5% 0; padding:23px 0; border-top:1px solid var(--line); font:10px monospace; letter-spacing:1px; color:#848d9d; }
+.sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+.noscript { position:fixed; top:40%; width:100%; text-align:center; padding:30px; background:#222; }
+
+/* ==================== 2. Кейсы поверх консоли ==================== */
+#cases-dialog { color:var(--text); width:min(900px,calc(100% - 28px)); max-height:90dvh; border:1px solid #ffffff24; border-radius:18px; padding:28px; background:#131923ed; box-shadow:0 35px 100px #0008; overflow:auto; }
+#cases-dialog[open] { animation:modal-in .4s ease both; }
+#cases-dialog::backdrop { background:#080b1380; }
+@keyframes modal-in { from { opacity:0; transform:translateY(28px) scale(.96); } to { opacity:1; transform:none; } }
+.modal-header { display:flex; justify-content:space-between; align-items:center; gap:16px; color:#929dad; font:11px monospace; letter-spacing:1.5px; }
+.modal-header button { display:flex; align-items:center; gap:15px; padding:9px 12px; border:1px solid #ffffff25; background:none; border-radius:7px; letter-spacing:0; }
+.modal-header button span { font-size:25px; line-height:1; }
+.case-heading p { font:11px monospace; color:var(--accent); letter-spacing:1px; margin:25px 0 10px; }
+.case-heading h2 { font-size:clamp(23px,3.5vw,34px); line-height:1.2; margin:0 0 22px; letter-spacing:-1px; }
+.player-wrap { aspect-ratio:16/9; background:#080a10; border-radius:10px; overflow:hidden; }
+.player-wrap iframe { width:100%; height:100%; border:0; display:block; }
+.player-note { font-size:12px; color:#8e9aab; line-height:1.6; }.player-note a { color:#becbb6; text-decoration:underline; }
+.case-details { display:grid; grid-template-columns:1fr 1fr; gap:30px; padding:8px 0 20px; }
+.case-details h3 { font-size:16px; font-weight:500; margin-bottom:10px; }.case-details p,.case-details li { font-size:14px; line-height:1.7; color:#aab5c5; }.case-details ul { margin:0; padding-left:18px; }
+.case-navigation { display:flex; align-items:center; justify-content:space-between; gap:12px; border-top:1px solid var(--line); padding-top:20px; }
+.case-navigation button { border:1px solid #ffffff25; background:#ffffff06; border-radius:7px; padding:12px 16px; font-size:14px; }.case-navigation button:hover { background:#ffffff12; }.case-navigation span { color:#91a080; font:12px monospace; }
+.all-work { display:block; text-align:center; margin-top:22px; font-size:13px; color:var(--accent); }
+@media(max-width:700px) { .page-header { height:80px; gap:18px; }.page-header p { font-size:9px; }.wordmark { font-size:32px; }.telegram-link { font-size:12px; padding:10px 12px; }.edition { font-size:8px; letter-spacing:1px; }.side-note { display:none; }.stage { height:clamp(470px,64svh,670px); }.instructions p { font-size:11px; }footer { flex-wrap:wrap; font-size:9px; }footer span:nth-child(2) { display:none; }#cases-dialog { padding:18px; }.case-details { grid-template-columns:1fr; gap:0; }.case-navigation button { padding:12px; } }
+/* При системной настройке «меньше движения» переход происходит сразу.
+   Физическое нажатие кнопки остаётся коротким, без вращения всей сцены. */
+@media(prefers-reduced-motion:reduce) { *,*::before,*::after { animation:none!important; transition:none!important; } }
+
+/* Русские подписи и встроенные публикации с реальными работами. */
+.player-wrap.telegram-embed { aspect-ratio:auto; height:480px; background:#fff; }
+.instructions { padding:0 20px; text-align:center; }
+@media(max-width:420px) { .page-header { gap:12px; } .wordmark { font-size:28px; letter-spacing:-2px; } .page-header p { font-size:8px; letter-spacing:1px; } .case-navigation button { font-size:12px; padding:12px 8px; } }

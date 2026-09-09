@@ -1,0 +1,7 @@
+[
+  {"id":"editors_video","name":"Монтажёры / Рилс-мейкеры","enabled":true},
+  {"id":"smmlancer","name":"SMMLANCER","enabled":true},
+  {"id":"vakansii_reelsmaker","name":"Таверна монтажёров","enabled":true},
+  {"id":"edit_jobs","name":"Монтаж Hub","enabled":true},
+  {"id":"real_video_client","name":"Видеомонтаж — вакансии","enabled":true}
+]

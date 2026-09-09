@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#171a24">
+  <meta name="description" content="hiki34 — Тимур. Монтаж обзоров, подкастов и коротких роликов. Анимация персонажей и графики.">
+  <title>hiki34 — монтаж и анимация</title>
+  <link rel="stylesheet" href="style.css">
+  <!-- Бесплатный шрифт. При недоступном Google Fonts останется monospace. -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+  <!-- Все Three.js-модули закреплены на ОДНОЙ версии во избежание конфликтов.
+       Здесь нет конструктора, API-ключа, аналитики или платного сервиса.
+       CDN и Google Fonts требуют интернета. Собственный сервер не нужен. -->
+  <script type="importmap">
+    {"imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/"
+    }}
+  </script>
+  <!-- Намеренно обычный script, а не локальный type="module": так script.js
+       загружается при двойном клике по index.html. CDN-модули импортируются
+       динамически внутри script.js и разрешают CORS. Используй свежий браузер. -->
+  <script src="script.js" defer></script>
+</head>
+<body>
+  <header class="page-header">
+    <a class="wordmark" href="./index.html" aria-label="hiki34 — главная">hiki34</a>
+    <p>ВИДЕОМОНТАЖЁР<br><span>ТИМУР · АНИМАЦИЯ</span></p>
+    <a class="telegram-link" href="https://t.me/Timurka34" target="_blank" rel="noopener noreferrer">Написать ↗</a>
+  </header>
+
+  <main>
+    <div class="edition" aria-hidden="true">ПОРТФОЛИО <span>МОНТАЖ И АНИМАЦИЯ</span></div>
+    <section class="console-section" aria-label="Интерактивное портфолио в карманной консоли">
+      <div class="stage" id="stage">
+        <!-- WebGL Canvas будет добавлен сюда. CanvasTexture экрана создаётся
+             отдельно в памяти: это не наложенный HTML, а материал 3D-модели. -->
+        <div id="three-container" aria-label="3D-консоль. Перетаскивай для поворота; нажимай кнопки на корпусе."></div>
+      </div>
+      <p class="loading" id="loading" role="status">Собираем карманную консоль…</p>
+      <div id="load-error" class="load-error" role="alert" hidden>
+        <h1>Не удалось включить 3D-экран</h1>
+        <p id="error-message">Проверь подключение к интернету и обнови браузер.</p>
+        <button type="button" id="retry">Попробовать снова</button>
+        <a href="https://t.me/lvledit" target="_blank" rel="noopener noreferrer">Работы в Телеграм ↗</a>
+      </div>
+      
+    </section>
+    <div class="instructions"><span class="status-dot"></span><p>Нажимай кнопки на корпусе или используй клавиатуру.</p></div>
+    <!-- Эти HTML-кнопки дублируют 3D-кнопки для телефона и клавиатурной
+         доступности. Их нажатие запускает ту же анимацию на корпусе. -->
+    <div class="controls" id="controls" aria-label="Управление консолью">
+      <button type="button" data-action="up" aria-label="Вверх">↑</button>
+      <button type="button" data-action="down" aria-label="Вниз">↓</button>
+      <button type="button" data-action="enter" class="enter">↵ <span>Открыть</span></button>
+      <button type="button" data-action="back">⎋ <span>Назад</span></button>
+    </div>
+    <!-- Canvas сам по себе не читается скринридером. Здесь актуальный экран
+         продублирован текстом и обновляется только при изменении состояния. -->
+    <p class="sr-only" id="screen-reader" role="status" aria-live="polite" aria-atomic="true"></p>
+    <a class="contact-shortcut" id="contact-shortcut" href="https://t.me/Timurka34" target="_blank" rel="noopener noreferrer" hidden>Открыть Телеграм @Timurka34 ↗</a>
+  </main>
+  <footer><span>© hiki34</span><span>ТИМУР · ВИДЕОМОНТАЖЁР</span><a href="https://t.me/lvledit" target="_blank" rel="noopener noreferrer">ВСЕ РАБОТЫ ↗</a></footer>
+
+  <!-- Нативный dialog: фокус остаётся в окне, фон недоступен для кликов,
+       Escape закрывает окно. Видео создаётся только после открытия кейса. -->
+  <dialog id="cases-dialog" aria-labelledby="case-title">
+    <div class="modal-header"><span>ИЗБРАННЫЕ РАБОТЫ / <span id="case-number">01</span></span><button type="button" id="close-cases" aria-label="Закрыть кейсы">Закрыть <span>×</span></button></div>
+    <div class="case-heading"><p id="case-tag"></p><h2 id="case-title"></h2></div>
+    <div class="player-wrap" id="player-wrap"></div>
+    <p class="player-note">Если видео не загружается, <a id="youtube-link" href="https://www.youtube.com/" target="_blank" rel="noopener noreferrer">открой работу по ссылке ↗</a></p>
+    <div class="case-details"><section><h3>Задача</h3><p id="case-task"></p></section><section><h3>Моя работа</h3><ul id="case-work"></ul></section></div>
+    <div class="case-navigation"><button type="button" id="previous-case" aria-label="Предыдущий кейс">← Предыдущая</button><span id="case-count"></span><button type="button" id="next-case" aria-label="Следующий кейс">Следующая →</button></div>
+    <a class="all-work" href="https://t.me/lvledit" target="_blank" rel="noopener noreferrer">Больше работ в Телеграм ↗</a>
+  </dialog>
+  <noscript><p class="noscript">Для работы консоли включи выполнение сценариев в браузере. <a href="https://t.me/lvledit">Открыть портфолио в Телеграм</a></p></noscript>
+</body>
+</html>
