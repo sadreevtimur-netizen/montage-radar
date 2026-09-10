@@ -56,10 +56,12 @@ def is_job(text):
     t = clean_text(text).lower().replace('ё', 'е')
     if re.search(r'ищу\s+(?:(?:full.time|part.time|проектную|удаленную|постоянную|новую)\s+)*работу', t):
         return False
-    if re.search(r'#(?:резюме|портфолио|помогу)\b|какой проект ищу|ищу\s+(?:(?:проектную|удаленную|постоянную)\s+)?(?:работу|заказы|клиентов)|предлагаю\s+(?:свои\s+)?услуги|я\s+(?:видео)?монтажер\b', t):
+    if re.search(r'#(?:резюме|помогу)\b|какой проект ищу|ищу\s+(?:(?:проектную|удаленную|постоянную)\s+)?(?:работу|заказы|клиентов)|предлагаю\s+(?:свои\s+)?услуги|я\s+(?:видео)?монтажер\b', t):
+        return False
+    if re.search(r'^\s*#портфолио\b', t):
         return False
     heading = ' '.join(t.splitlines()[:2])[:180]
-    if re.search(r'курс|вебинар|обучение монтажу|научим монтировать', heading) and not re.search(r'вакансия|ищем преподавателя', heading):
+    if re.search(r'^(?:курс|вебинар|обучение монтажу)\b|научим монтировать|запишись на курс|набор на (?:курс|обучение)|на обучение', heading) and not re.search(r'ищем преподавателя', heading):
         return False
     if re.search(r'(?:ищем|ищу|нужен|требуется|вакансия)\s*[:—-]?\s*(?:smm|смм|видеооператор|оператор|сценарист|контент.менеджер)', heading):
         return False
@@ -126,11 +128,12 @@ def contacts(text, links):
 
 def brief(text):
     """Только дословные фрагменты. Не додумываем объём, цену и сроки."""
-    lines = [x.strip(' •—-') for x in re.split(r'[\n;]+', text) if x.strip()]
+    lines = [re.sub(r'#\w+', '', x).strip(' \u200b•—-') for x in re.split(r'[\n;]+', text)]
+    lines = [x for x in lines if x]
     def pick(pattern):
         return next((x[:280] for x in lines if re.search(pattern, x, re.I)), None)
     return {
-        'task': pick(r'монтир|монтаж|reels|shorts|подкаст|анимац|motion'),
+        'task': pick(r'^(?:задач[аи]|обязанности)\s*[:—-].+|монтировать|собирать\s+(?:ролик|видео)|монтаж\s+(?:ролик|видео|reels|shorts|подкаст)|создавать\s+(?:анимац|видео)') or pick(r'монтир|монтаж|reels|shorts|подкаст|анимац|motion'),
         'volume': pick(r'\d+\s*(?:[-–]\s*\d+\s*)?(?:(?:коротких|длинных)\s+)?(?:ролик|видео|reels|shorts|выпуск)|объ[её]м\s*:'),
         'deadline': pick(r'дедлайн|срок(?:и|а)?\s*[:—-]|до\s+\d{1,2}[./]|за\s+\d+\s*(?:дн|день|час)|сдать\s+до'),
     }
@@ -140,20 +143,42 @@ def reply_contacts(text, links=(), excluded=()):
     found = []
     excluded = {x.lower().lstrip('@') for x in excluded}
     lines = text.splitlines()
+    prompt = r'отклик|писать|пишите|связ[ьи]|контакт|отправ|присыл|пришл'
+    noise = r'реклам|разместить|подпис|наш канал'
     for index, line in enumerate(lines):
-        if re.search(r'отклик|писать|пишите|контакт|связ[ьи]', line, re.I) and index + 1 < len(lines):
-            line += ' ' + lines[index + 1]
-        if re.search(r'реклам|разместить|подпис|наш канал|портфолио', line, re.I):
+        if re.search(noise, line, re.I) or not re.search(prompt, line, re.I):
             continue
-        if not re.search(r'отклик|писать|пишите|связ[ьи]|контакт|резюме|отправ|присыл', line, re.I):
-            continue
+        # Соседнюю строку берём лишь при отсутствии контакта в текущей.
         urls = re.findall(r'https://t\.me/[A-Za-z][A-Za-z0-9_]{3,31}\b', line)
-        for c in contacts(line, urls):
+        values = contacts(line, urls)
+        if not values and index + 1 < len(lines):
+            following = lines[index + 1].strip()
+            if not re.search(noise, following, re.I) and re.fullmatch(r'[@\w.+:/ -]+', following):
+                values = contacts(following, re.findall(r'https://t\.me/[A-Za-z][A-Za-z0-9_]{3,31}\b', following))
+        for c in values:
             if c.lower().lstrip('@') in excluded or c.lower().endswith('bot'):
                 continue
             if c not in found:
                 found.append(c)
     return found
+
+def extract_pay(text):
+    """Разбираем суммы построчно: цифры соседнего пункта не входят в бюджет."""
+    number = r'\d+(?:[ \u00a0]\d{3})*(?:[.,]\d+)?'
+    currency = r'(?:₽|руб\w*|\$|€|USD|EUR|тыс\.?)(?!\w)'
+    pattern = rf'(?:от[ ]+|до[ ]+)?{number}(?:[ ]*[–—-][ ]*{number})?[ ]*{currency}'
+    result = []
+    for line in text.splitlines():
+        for match in re.finditer(pattern, line, re.I):
+            amount = match.group().strip()
+            tail = line[match.end():]
+            unit = re.match(r'[ ,]*(?:/\s*|за\s+|в\s+)(?:один\s+)?(?:ролик|видео|проект|месяц|мес\.?|час|минут\w*|выпуск)\w*', tail, re.I)
+            if unit:
+                amount += unit.group()
+            if amount not in result:
+                result.append(amount)
+    return result[:4]
+
 
 def source_metrics(jobs, previous, now):
     """Семь дней уникальных находок; один заказ может иметь несколько источников."""
@@ -183,7 +208,7 @@ def make_job(post, source, now):
     for name, pattern in [('Короткие видео', r'рилс|reels|shorts|тикток|вертикаль'), ('YouTube', r'youtube|ютуб|ютьюб'), ('Подкасты', r'подкаст|интервью'), ('Анимация', r'анимац|motion|моуш|after effects')]:
         if re.search(pattern, text, re.I):
             formats.append(name)
-    amounts = re.findall(r'(?:от\s*)?\d[\d\s.,]*(?:[–—-]\s*\d[\d\s.,]*)?\s*(?:₽|руб\w*|\$|€|тыс\.?\s*(?:₽|руб\w*)?)[^\n.!?]{0,40}', text, re.I)
+    amounts = extract_pay(text)
     lines = [re.sub(r'#\w+', '', x).strip(' •—-') for x in text.splitlines() if x.strip()]
     title = next((x for x in lines if len(x) > 15 and not x.startswith('#')), 'Вакансия монтажёра')[:140]
     return {'id': hashlib.sha256(post['post'].encode()).hexdigest()[:16], 'title': title,
@@ -369,6 +394,7 @@ def main():
     ledger = source_metrics(jobs, previous, now)
     jobs, seen = expire_jobs(jobs, previous, now)
     for j in jobs:
+        j['pay'] = extract_pay(j['text'])
         j['brief'] = brief(j['text'])
         j['replyContacts'] = reply_contacts(j['text'], excluded=[x['url'].split('/')[3] for x in j['sources']])
     for s in statuses:

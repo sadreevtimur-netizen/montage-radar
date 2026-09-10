@@ -1,5 +1,5 @@
 import unittest
-from collector import FeedParser, is_job, inspect_risks, deduplicate, merge_observations, is_closed, work_flags, expire_jobs, brief, reply_contacts, source_metrics
+from collector import FeedParser, is_job, inspect_risks, deduplicate, merge_observations, is_closed, work_flags, expire_jobs, brief, reply_contacts, source_metrics, extract_pay
 from datetime import datetime, timezone
 
 class Rules(unittest.TestCase):
@@ -92,5 +92,22 @@ class Improvements(unittest.TestCase):
         second=source_metrics([j],{'sourceLedger':first},now)
         self.assertEqual(len(second),1)
         self.assertEqual(second[0]['channels'],['a','b'])
+
+class AuditRegressions(unittest.TestCase):
+    def test_course_job_not_advertisement(self):
+        self.assertTrue(is_job('Ищем монтажера для онлайн-курса. Исходники готовы, оплата 5000 рублей.'))
+        self.assertTrue(is_job('Ищем монтажера. Присылайте #портфолио в личку.'))
+        self.assertFalse(is_job('Курс по монтажу. Ищем монтажеров на обучение.'))
+    def test_reply_before_promotion(self):
+        self.assertEqual(reply_contacts('Присылайте портфолио @client_name'),['@client_name'])
+        self.assertEqual(reply_contacts('Пишите @client_name\nПодписывайтесь на наш канал @channel_name'),['@client_name'])
+        self.assertEqual(reply_contacts('Отклик:\nhttps://t.me/client_name'),['@client_name'])
+    def test_money_line_boundary_and_unit(self):
+        self.assertEqual(extract_pay('Пункт 1\n— 2000$'),['2000$'])
+        self.assertEqual(extract_pay('Бюджет 100 000–130 000 ₽ в месяц'),['100 000–130 000 ₽ в месяц'])
+        self.assertEqual(extract_pay('900₽ за ролик, длинный — 1200₽ за ролик'),['900₽ за ролик','1200₽ за ролик'])
+    def test_task_prefers_duties(self):
+        text='#ищу #ищумонтажера\nИщем монтажера\nЗадачи: монтировать короткие ролики'
+        self.assertEqual(brief(text)['task'],'Задачи: монтировать короткие ролики')
 
 if __name__=='__main__':unittest.main()
