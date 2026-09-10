@@ -58,6 +58,11 @@ def is_job(text):
         return False
     if re.search(r'#(?:резюме|портфолио|помогу)\b|какой проект ищу|ищу\s+(?:(?:проектную|удаленную|постоянную)\s+)?(?:работу|заказы|клиентов)|предлагаю\s+(?:свои\s+)?услуги|я\s+(?:видео)?монтажер\b', t):
         return False
+    heading = ' '.join(t.splitlines()[:2])[:180]
+    if re.search(r'курс|вебинар|обучение монтажу|научим монтировать', heading) and not re.search(r'вакансия|ищем преподавателя', heading):
+        return False
+    if re.search(r'(?:ищем|ищу|нужен|требуется|вакансия)\s*[:—-]?\s*(?:smm|смм|видеооператор|оператор|сценарист|контент.менеджер)', heading):
+        return False
     role = r'(?:видео)?монтаж[её]р\w*|режиссер\w*\s+монтажа|видеоредактор\w*|video\s*editor|моуш[ен]*[ -]?дизайнер\w*|motion[ -]?designer|рилс[ -]?мейкер\w*|reels[ -]?мейкер\w*'
     if re.search(rf'\bя\s+(?:(?:2d|3d|2d/3d|опытный|начинающий)\s+)?(?:{role})', t[:350]):
         return False
@@ -119,6 +124,49 @@ def contacts(text, links):
             values.append('@' + url.rsplit('/', 1)[-1])
     return list(dict.fromkeys(values))
 
+def brief(text):
+    """Только дословные фрагменты. Не додумываем объём, цену и сроки."""
+    lines = [x.strip(' •—-') for x in re.split(r'[\n;]+', text) if x.strip()]
+    def pick(pattern):
+        return next((x[:280] for x in lines if re.search(pattern, x, re.I)), None)
+    return {
+        'task': pick(r'монтир|монтаж|reels|shorts|подкаст|анимац|motion'),
+        'volume': pick(r'\d+\s*(?:[-–]\s*\d+\s*)?(?:(?:коротких|длинных)\s+)?(?:ролик|видео|reels|shorts|выпуск)|объ[её]м\s*:'),
+        'deadline': pick(r'дедлайн|срок(?:и|а)?\s*[:—-]|до\s+\d{1,2}[./]|за\s+\d+\s*(?:дн|день|час)|сдать\s+до'),
+    }
+
+def reply_contacts(text, links=(), excluded=()):
+    """Контакт для отклика — только рядом с явным приглашением написать."""
+    found = []
+    excluded = {x.lower().lstrip('@') for x in excluded}
+    lines = text.splitlines()
+    for index, line in enumerate(lines):
+        if re.search(r'отклик|писать|пишите|контакт|связ[ьи]', line, re.I) and index + 1 < len(lines):
+            line += ' ' + lines[index + 1]
+        if re.search(r'реклам|разместить|подпис|наш канал|портфолио', line, re.I):
+            continue
+        if not re.search(r'отклик|писать|пишите|связ[ьи]|контакт|резюме|отправ|присыл', line, re.I):
+            continue
+        urls = re.findall(r'https://t\.me/[A-Za-z][A-Za-z0-9_]{3,31}\b', line)
+        for c in contacts(line, urls):
+            if c.lower().lstrip('@') in excluded or c.lower().endswith('bot'):
+                continue
+            if c not in found:
+                found.append(c)
+    return found
+
+def source_metrics(jobs, previous, now):
+    """Семь дней уникальных находок; один заказ может иметь несколько источников."""
+    cutoff = (now-timedelta(days=7)).isoformat()
+    ledger = {x['id']: x for x in previous.get('sourceLedger', []) if x['date'] >= cutoff}
+    for j in jobs:
+        if j['date'] < cutoff or j.get('closed'):
+            continue
+        channels = sorted({x['url'].split('/')[3].lower() for x in j['sources']})
+        old = ledger.get(j['id'], {})
+        ledger[j['id']] = {'id':j['id'], 'date':j['date'], 'channels':sorted(set(channels+old.get('channels', [])))}
+    return list(ledger.values())
+
 def make_job(post, source, now):
     text = clean_text(''.join(post['parts']))
     if not is_job(text) or not post['date']:
@@ -141,6 +189,7 @@ def make_job(post, source, now):
     return {'id': hashlib.sha256(post['post'].encode()).hexdigest()[:16], 'title': title,
             'text': text[:14000], 'date': date.isoformat(), 'checkedAt': now.isoformat(),
             'firstSeenAt': now.isoformat(), 'closed': is_closed(text), 'flags': work_flags(text),
+            'brief': brief(text), 'replyContacts': reply_contacts(text, post['links'], [source['id']]),
             'formats': formats or ['Монтаж'], 'pay': amounts[:3], 'contacts': [c for c in contacts(text, post['links']) if c.lower() != '@' + source['id'].lower() and not (c.startswith('@') and c.lower().endswith('bot'))],
             'risks': inspect_risks(text), 'sources': [{'name': source['name'], 'url': 'https://t.me/' + post['post']}]}
 
@@ -157,7 +206,7 @@ def deduplicate(jobs):
         if match is None and job['contacts']:
             a = set(key.split())
             for k, other in groups.items():
-                if set(job['contacts']) & set(other['contacts']):
+                if {c.lower() for c in job['contacts']} & {c.lower() for c in other['contacts']}:
                     b = set(k.split())
                     if len(a & b) / max(1, len(a | b)) >= .9:
                         match = k
@@ -317,14 +366,21 @@ def main():
                          'latestPostId': latest_id if ok else old_status.get(ident.lower(), {}).get('latestPostId', 0),
                          'note': source.get('note', ''), 'reviewedAt': source.get('reviewedAt'), 'message': message})
     jobs = merge_observations(old_jobs, fetched, observed, now)
+    ledger = source_metrics(jobs, previous, now)
     jobs, seen = expire_jobs(jobs, previous, now)
+    for j in jobs:
+        j['brief'] = brief(j['text'])
+        j['replyContacts'] = reply_contacts(j['text'], excluded=[x['url'].split('/')[3] for x in j['sources']])
     for s in statuses:
         own = [j for j in jobs if not j.get('closed') and any(x['url'].split('/')[3].lower() == s['id'].lower() for x in j['sources'])]
         s['newCount'] = sum(j['id'] not in old_ids for j in own)
-        s['jobs7d'] = sum(j['date'] >= (now - timedelta(days=7)).isoformat() for j in own)
+        history = [x for x in ledger if s['id'].lower() in x['channels']]
+        s['jobs7d'] = len(history)
+        s['exclusive7d'] = sum(len(x['channels']) == 1 for x in history)
+        s['shared7d'] = sum(len(x['channels']) > 1 for x in history)
         s['jobs24h'] = sum(j['date'] >= (now - timedelta(hours=24)).isoformat() for j in own)
         s['latestJobAt'] = max((j['date'] for j in own), default=None)
-    result = {'schemaVersion': 3, 'retentionHours': 24, 'seen': seen, 'generatedAt': now.isoformat(),
+    result = {'schemaVersion': 3, 'retentionHours': 24, 'seen': seen, 'sourceLedger': ledger, 'generatedAt': now.isoformat(),
               'lastSuccessAt': now.isoformat() if succeeded else previous.get('lastSuccessAt'),
               'newCount': sum(j['id'] not in old_ids and not j.get('closed') for j in jobs),
               'sources': statuses, 'jobs': jobs}

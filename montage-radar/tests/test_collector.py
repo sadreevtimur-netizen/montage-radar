@@ -1,5 +1,5 @@
 import unittest
-from collector import FeedParser, is_job, inspect_risks, deduplicate, merge_observations, is_closed, work_flags, expire_jobs
+from collector import FeedParser, is_job, inspect_risks, deduplicate, merge_observations, is_closed, work_flags, expire_jobs, brief, reply_contacts, source_metrics
 from datetime import datetime, timezone
 
 class Rules(unittest.TestCase):
@@ -68,5 +68,29 @@ class Rules(unittest.TestCase):
         repost={**old,'id':'newpost','date':'2026-09-10T11:00:00+00:00'}
         active,_=expire_jobs([repost],{'seen':history},now)
         self.assertEqual(active,[])
+
+class Improvements(unittest.TestCase):
+    def test_primary_role_and_courses(self):
+        self.assertFalse(is_job('Ищем SMM-специалиста. Требуется монтажерский опыт и монтаж Reels.'))
+        self.assertFalse(is_job('Курс по монтажу. Ищем монтажеров на обучение.'))
+        self.assertTrue(is_job('Ищем монтажера. Бюджет обсудим лично.'))
+        self.assertTrue(is_job('Ищем монтажера. Работа с нашим SMM-специалистом.'))
+    def test_literal_summary(self):
+        b=brief('Ищем монтажера YouTube\nОбъем: 10 коротких роликов\nСрок: до 15.09')
+        self.assertEqual(b['volume'],'Объем: 10 коротких роликов')
+        self.assertEqual(b['deadline'],'Срок: до 15.09')
+        self.assertIsNone(brief('Ищем монтажера')['deadline'])
+    def test_explicit_contacts(self):
+        text='Наш канал @agency\nПортфолио @editor\nОтклик:\n@client_name\nРеклама: пишите @admanager'
+        self.assertEqual(reply_contacts(text),['@client_name'])
+        self.assertEqual(reply_contacts('Пишите jobs@example.com'),['jobs@example.com'])
+        self.assertEqual(reply_contacts('Пример: @random'),[])
+    def test_weekly_unique_stats(self):
+        now=datetime(2026,9,10,12,tzinfo=timezone.utc)
+        j={'id':'one','date':'2026-09-10T10:00:00+00:00','sources':[{'url':'https://t.me/a/1'},{'url':'https://t.me/b/2'}]}
+        first=source_metrics([j],{},now)
+        second=source_metrics([j],{'sourceLedger':first},now)
+        self.assertEqual(len(second),1)
+        self.assertEqual(second[0]['channels'],['a','b'])
 
 if __name__=='__main__':unittest.main()
