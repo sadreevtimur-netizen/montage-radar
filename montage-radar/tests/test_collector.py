@@ -1,5 +1,5 @@
 import unittest
-from collector import FeedParser, is_job, inspect_risks, deduplicate, merge_observations, is_closed, work_flags
+from collector import FeedParser, is_job, inspect_risks, deduplicate, merge_observations, is_closed, work_flags, expire_jobs
 from datetime import datetime, timezone
 
 class Rules(unittest.TestCase):
@@ -54,5 +54,19 @@ class Rules(unittest.TestCase):
         self.assertIn('Нужна съёмка',work_flags('Задачи: Съемка видео для соцсетей'))
         self.assertNotIn('Нужна съёмка',work_flags('Снимать не нужно, исходники предоставим'))
         self.assertTrue(is_closed('Вакансия закрыта'))
+
+    def test_expiry_and_repost_after_expiry(self):
+        now=datetime(2026,9,10,12,tzinfo=timezone.utc)
+        def job(ident,date):
+            return {'id':ident,'date':date,'text':'Ищем монтажера '+ident,'contacts':['@client'],'closed':False}
+        old=job('old','2026-09-09T12:00:00+00:00')
+        fresh=job('fresh','2026-09-09T12:00:01+00:00')
+        closed={**job('closed','2026-09-10T11:00:00+00:00'),'closed':True}
+        active,history=expire_jobs([old,fresh,closed],{},now)
+        self.assertEqual([j['id'] for j in active],['fresh'])
+        self.assertTrue(all('text' not in h for h in history))
+        repost={**old,'id':'newpost','date':'2026-09-10T11:00:00+00:00'}
+        active,_=expire_jobs([repost],{'seen':history},now)
+        self.assertEqual(active,[])
 
 if __name__=='__main__':unittest.main()
