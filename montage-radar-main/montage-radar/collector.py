@@ -200,6 +200,35 @@ def merge_observations(previous, fetched, observed_urls, now):
     return sorted(deduplicate(kept), key=lambda j: j['date'], reverse=True)
 
 
+def expire_jobs(jobs, previous, now):
+    """В ленте — сутки. От старых постов храним только отпечаток, чтобы не оживлять перепосты."""
+    def fingerprint(j):
+        value = normalize(clean_text(j['text'])) + '|' + '|'.join(sorted(c.lower() for c in j['contacts']))
+        return hashlib.sha256(value.encode()).hexdigest()
+    cutoff = (now - timedelta(days=30)).isoformat()
+    history = {h['key']: h for h in previous.get('seen', []) if h['date'] >= cutoff}
+    for j in previous.get('jobs', []):
+        k = fingerprint(j)
+        h = {'key': k, 'id': j['id'], 'date': j['date'], 'firstSeenAt': j.get('firstSeenAt', j['date'])}
+        if k not in history or h['date'] < history[k]['date']:
+            history[k] = h
+    active = []
+    for j in jobs:
+        k = fingerprint(j)
+        old = history.get(k)
+        if old:
+            j['date'] = min(j['date'], old['date'])
+            j['id'] = old['id']
+            j['firstSeenAt'] = old['firstSeenAt']
+        history[k] = {'key': k, 'id': j['id'], 'date': j['date'], 'firstSeenAt': j.get('firstSeenAt', j['date'])}
+        published = datetime.fromisoformat(j['date'].replace('Z', '+00:00'))
+        if published.tzinfo is None:
+            published = published.replace(tzinfo=timezone.utc)
+        if not j.get('closed') and now - timedelta(hours=24) < published <= now:
+            active.append(j)
+    return active, [h for h in history.values() if h['date'] >= cutoff]
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--output', default=str(ROOT / 'site/data/jobs.json'))
@@ -288,13 +317,14 @@ def main():
                          'latestPostId': latest_id if ok else old_status.get(ident.lower(), {}).get('latestPostId', 0),
                          'note': source.get('note', ''), 'reviewedAt': source.get('reviewedAt'), 'message': message})
     jobs = merge_observations(old_jobs, fetched, observed, now)
+    jobs, seen = expire_jobs(jobs, previous, now)
     for s in statuses:
         own = [j for j in jobs if not j.get('closed') and any(x['url'].split('/')[3].lower() == s['id'].lower() for x in j['sources'])]
         s['newCount'] = sum(j['id'] not in old_ids for j in own)
         s['jobs7d'] = sum(j['date'] >= (now - timedelta(days=7)).isoformat() for j in own)
         s['jobs24h'] = sum(j['date'] >= (now - timedelta(hours=24)).isoformat() for j in own)
         s['latestJobAt'] = max((j['date'] for j in own), default=None)
-    result = {'schemaVersion': 2, 'generatedAt': now.isoformat(),
+    result = {'schemaVersion': 3, 'retentionHours': 24, 'seen': seen, 'generatedAt': now.isoformat(),
               'lastSuccessAt': now.isoformat() if succeeded else previous.get('lastSuccessAt'),
               'newCount': sum(j['id'] not in old_ids and not j.get('closed') for j in jobs),
               'sources': statuses, 'jobs': jobs}
