@@ -1,8 +1,8 @@
-name: Обновить вакансии и сайт
+name: Refresh vacancies and deploy
 
 on:
   schedule:
-    - cron: '17 * * * *'
+    - cron: '7,22,37,52 * * * *'
   workflow_dispatch:
   push:
     branches: [main]
@@ -31,7 +31,7 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Найти папку проекта
+      - name: Find project
         id: project
         shell: bash
         run: |
@@ -44,17 +44,17 @@ jobs:
             exit 1
           fi
 
-      - name: Проверить правила
+      - name: Run tests
         working-directory: ${{ steps.project.outputs.dir }}
         run: python -m unittest discover -s tests -v
 
-      - name: Собрать вакансии
+      - name: Collect vacancies
         id: collect
         continue-on-error: true
         working-directory: ${{ steps.project.outputs.dir }}
         run: python collector.py
 
-      - name: Сохранить обновления
+      - name: Save data
         working-directory: ${{ steps.project.outputs.dir }}
         run: |
           git config user.name "github-actions[bot]"
@@ -71,11 +71,11 @@ jobs:
         with:
           path: ${{ steps.project.outputs.dir }}/site
 
-      - name: Опубликовать сайт
+      - name: Deploy site
         id: deployment
         uses: actions/deploy-pages@v4
 
-      - name: Сообщить об ошибке сбора
+      - name: Report collection failure
         if: steps.collect.outcome == 'failure'
         run: |
           echo "Сбор не удался. Сайт опубликован с прежними данными."
