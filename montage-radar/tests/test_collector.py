@@ -1,5 +1,5 @@
 import unittest
-from collector import FeedParser, is_job, inspect_risks, deduplicate, merge_observations, is_closed, work_flags, expire_jobs, brief, reply_contacts, source_metrics, extract_pay
+from collector import FeedParser, is_job, inspect_risks, deduplicate, merge_observations, is_closed, work_flags, expire_jobs, brief, reply_contacts, source_metrics, extract_pay, jobs_from_post, cleanup_due
 from datetime import datetime, timezone
 
 class Rules(unittest.TestCase):
@@ -62,11 +62,11 @@ class Rules(unittest.TestCase):
         old=job('old','2026-09-09T12:00:00+00:00')
         fresh=job('fresh','2026-09-09T12:00:01+00:00')
         closed={**job('closed','2026-09-10T11:00:00+00:00'),'closed':True}
-        active,history=expire_jobs([old,fresh,closed],{},now)
+        active,history=expire_jobs([old,fresh,closed],{},now,retention_hours=24)
         self.assertEqual([j['id'] for j in active],['fresh'])
         self.assertTrue(all('text' not in h for h in history))
         repost={**old,'id':'newpost','date':'2026-09-10T11:00:00+00:00'}
-        active,_=expire_jobs([repost],{'seen':history},now)
+        active,_=expire_jobs([repost],{'seen':history},now,retention_hours=24)
         self.assertEqual(active,[])
 
 class Improvements(unittest.TestCase):
@@ -109,5 +109,26 @@ class AuditRegressions(unittest.TestCase):
     def test_task_prefers_duties(self):
         text='#ищу #ищумонтажера\nИщем монтажера\nЗадачи: монтировать короткие ролики'
         self.assertEqual(brief(text)['task'],'Задачи: монтировать короткие ролики')
+
+class ScheduleAndDigests(unittest.TestCase):
+    def test_english_job(self):
+        self.assertTrue(is_job('Video editor for a YouTube channel. Long term, weekly. Pay $40 per video. In your reply send examples.'))
+        self.assertFalse(is_job('I am a video editor. Looking for work. My services: video editing. Pay negotiable.'))
+    def test_digest_isolates_clients(self):
+        now=datetime(2026,9,11,12,tzinfo=timezone.utc)
+        p={'post':'rueventjob/1','date':now.isoformat(),'links':[], 'parts':['Подборка\n1. #Монтажер\nНужно монтировать Reels за 1000 руб.\n@first_client\n2. #SMM\nВедение соцсетей @smm_client\n3. #Монтажер\nМонтаж подкаста за 5000 руб.\n@second_client']}
+        jobs=jobs_from_post(p,{'id':'rueventjob','name':'test','digest':True},now)
+        self.assertEqual(len(jobs),2)
+        self.assertEqual(jobs[0]['contacts'],['@first_client'])
+        self.assertEqual(jobs[1]['contacts'],['@second_client'])
+        self.assertNotEqual(jobs[0]['id'],jobs[1]['id'])
+        self.assertNotIn('5000',jobs[0]['text'])
+    def test_cleanup_interval(self):
+        now=datetime(2026,9,11,12,tzinfo=timezone.utc)
+        self.assertFalse(cleanup_due({'retentionHours':72,'lastCleanupAt':'2026-09-11T11:00:00+00:00'},now))
+        self.assertTrue(cleanup_due({'retentionHours':72,'lastCleanupAt':'2026-09-11T10:00:00+00:00'},now))
+        j={'id':'old','date':'2026-09-08T11:00:00+00:00','text':'Ищем монтажера','contacts':[]}
+        self.assertEqual(len(expire_jobs([j],{},now,prune=False)[0]),1)
+        self.assertEqual(len(expire_jobs([j],{},now,prune=True)[0]),0)
 
 if __name__=='__main__':unittest.main()

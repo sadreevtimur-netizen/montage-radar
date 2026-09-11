@@ -1,11 +1,12 @@
 // Внешние тексты вставляем только через textContent, никогда через innerHTML.
 const $ = id => document.getElementById(id);
 let data = { jobs: [], sources: [] };
-const DAY = 24*60*60*1000;
+const DAY = 72*60*60*1000;
 const el = (tag, text, cls) => { const node = document.createElement(tag); if(text !== undefined) node.textContent = text; if(cls) node.className = cls; return node; };
 function link(text, url, cls) { const a = el('a',text,cls); try { const u = new URL(url); if(u.protocol !== 'https:') return el('span',text); a.href=u.href; } catch { return el('span',text); } a.target='_blank'; a.rel='noopener noreferrer'; return a; }
 function ageLabel(date) {
  const minutes=Math.max(0,Math.floor((Date.now()-Date.parse(date))/60000));
+ if(minutes>=1440)return new Intl.RelativeTimeFormat('ru',{numeric:'always'}).format(-Math.floor(minutes/1440),'day');
  if(minutes<1)return 'Только что';
  return new Intl.RelativeTimeFormat('ru',{numeric:'always'}).format(-Math.floor(minutes<60?minutes:minutes/60),minutes<60?'minute':'hour');
 }
@@ -18,10 +19,10 @@ function render() {
  });
  jobs.sort((a,b)=>Date.parse(b.date)-Date.parse(a.date));
  $('count').textContent=`Вакансии · ${jobs.length}`; $('jobs').replaceChildren();
- if(!jobs.length) $('jobs').append(el('p','Свежих вакансий'+($('format').value?' в категории «'+$('format').value+'»':'')+' за последние 24 часа нет. Время последнего успешного сбора указано сверху.','empty'));
+ if(!jobs.length) $('jobs').append(el('p','Свежих вакансий'+($('format').value?' в категории «'+$('format').value+'»':'')+' за последние три дня нет. Время последнего успешного сбора указано сверху.','empty'));
  for(const j of jobs){const card=el('article',undefined,'card'),body=el('div'),aside=el('div',undefined,'aside');
  card.dataset.id=j.id;
- const stamp=el('div',ageLabel(j.date)+' · '+j.sources.map(s=>s.name).join(' / '),'meta');stamp.title=new Date(j.date).toLocaleString('ru-RU');body.append(stamp,el('h3',j.title));
+ const stamp=el('div',ageLabel(j.date)+(j.digest?' · дата подборки':'')+' · '+j.sources.map(s=>s.name).join(' / '),'meta');stamp.title=new Date(j.date).toLocaleString('ru-RU');body.append(stamp,el('h3',j.title));
  const tags=el('div',undefined,'tags'); [...j.formats,...(j.flags||[])].forEach(f=>tags.append(el('span',f,'tag')));body.append(tags);
  const brief=j.brief||{};const facts=el('dl',undefined,'facts');
  for(const [label,value] of [['Задача',brief.task],['Объём',brief.volume],['Бюджет',j.pay.length?j.pay.join(' · '):null],['Срок',brief.deadline]]){facts.append(el('dt',label),el('dd',value||'Не указано'));}body.append(facts);

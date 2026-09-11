@@ -68,6 +68,8 @@ def is_job(text):
     role = r'(?:видео)?монтаж[её]р\w*|режиссер\w*\s+монтажа|видеоредактор\w*|video\s*editor|моуш[ен]*[ -]?дизайнер\w*|motion[ -]?designer|рилс[ -]?мейкер\w*|reels[ -]?мейкер\w*'
     if re.search(rf'\bя\s+(?:(?:2d|3d|2d/3d|опытный|начинающий)\s+)?(?:{role})', t[:350]):
         return False
+    if re.search(r'video editor|video editing', t[:220]) and re.search(r'pay|paid|per video|apply|your reply|hiring|looking for', t) and not re.search(r'i am|i’m|i offer|looking for work|my services', t):
+        return True
     demand = r'ищу|ищем|ищут|нужен|нужны|требуется|требуются|требуем|вакансия'
     # «Монтажные вставки» в вакансии сценариста больше не делают её вакансией монтажёра.
     if re.search(rf'(?:{demand})[^\n.!?]{{0,75}}(?:{role})', t):
@@ -250,6 +252,38 @@ def deduplicate(jobs):
                     existing['sources'].append(src)
     return list(groups.values())
 
+def jobs_from_post(post, source, now):
+    """Нумерованные подборки: отдельная карточка и контакт каждого пункта."""
+    if source.get('digest'):
+        text = ''.join(post['parts'])
+        parts = re.split(r'(?m)^\s*\d{1,3}\.[ \t]*(?=#)', text)
+        jobs = []
+        for section in parts[1:]:
+            heading = section.splitlines()[0].lower().replace('ё','е')
+            if not re.search(r'монтаж|video.?editor|motion|моуш', heading):
+                continue
+            # В служебных заголовках нет «ищем», но роль указана явно.
+            item = {**post, 'parts':['Вакансия: '+section], 'links':[]}
+            job = make_job(item, source, now)
+            if job:
+                job['id'] = hashlib.sha256((post['post']+'|'+normalize(section)).encode()).hexdigest()[:16]
+                job['digest'] = True
+                job['replyContacts'] = contacts(section, [])
+                jobs.append(job)
+        return jobs
+    job = make_job(post, source, now)
+    return [job] if job else []
+
+def cleanup_due(previous, now):
+    if previous.get('retentionHours') != 72:
+        return True
+    try:
+        last = datetime.fromisoformat(previous['lastCleanupAt'].replace('Z','+00:00'))
+        return now-last >= timedelta(hours=2)
+    except (KeyError, ValueError, TypeError):
+        return True
+
+
 def fetch(url):
     req = Request(url, headers={'User-Agent': 'MontageRadar/1.0 (public vacancy feed reader)'})
     with urlopen(req, timeout=25) as response:
@@ -266,7 +300,7 @@ def merge_observations(previous, fetched, observed_urls, now):
         if sources:
             kept.append({**old, 'sources': sources})
     for job in fetched:
-        old = next((by_url[s['url'].lower()] for s in job['sources'] if s['url'].lower() in by_url), None)
+        old = next((j for j in previous if j['id'] == job['id']), None) if job.get('digest') else next((by_url[s['url'].lower()] for s in job['sources'] if s['url'].lower() in by_url), None)
         if old:
             job['id'] = old['id']
             job['firstSeenAt'] = old.get('firstSeenAt', old['date'])
@@ -274,7 +308,7 @@ def merge_observations(previous, fetched, observed_urls, now):
     return sorted(deduplicate(kept), key=lambda j: j['date'], reverse=True)
 
 
-def expire_jobs(jobs, previous, now):
+def expire_jobs(jobs, previous, now, retention_hours=72, prune=True):
     """В ленте — сутки. От старых постов храним только отпечаток, чтобы не оживлять перепосты."""
     def fingerprint(j):
         value = normalize(clean_text(j['text'])) + '|' + '|'.join(sorted(c.lower() for c in j['contacts']))
@@ -298,7 +332,7 @@ def expire_jobs(jobs, previous, now):
         published = datetime.fromisoformat(j['date'].replace('Z', '+00:00'))
         if published.tzinfo is None:
             published = published.replace(tzinfo=timezone.utc)
-        if not j.get('closed') and now - timedelta(hours=24) < published <= now:
+        if not j.get('closed') and published <= now and (not prune or now - timedelta(hours=retention_hours) < published):
             active.append(j)
     return active, [h for h in history.values() if h['date'] >= cutoff]
 
@@ -360,10 +394,9 @@ def main():
                     # Недоступный текст (например, медиа) не считается удалением объявления.
                     if post['parts']:
                         observed.add(('https://t.me/' + post['post']).lower())
-                        job = make_job(post, source, now)
-                        if job:
-                            fetched.append(job)
-                            count += not job['closed']
+                        found = jobs_from_post(post, source, now)
+                        fetched.extend(found)
+                        count += sum(not j['closed'] for j in found)
                 if min(p['date'] for p in posts) < cutoff:
                     complete = True
                     break
@@ -391,12 +424,13 @@ def main():
                          'latestPostId': latest_id if ok else old_status.get(ident.lower(), {}).get('latestPostId', 0),
                          'note': source.get('note', ''), 'reviewedAt': source.get('reviewedAt'), 'message': message})
     jobs = merge_observations(old_jobs, fetched, observed, now)
+    clean_now = cleanup_due(previous, now)
+    jobs, seen = expire_jobs(jobs, previous, now, prune=clean_now)
     ledger = source_metrics(jobs, previous, now)
-    jobs, seen = expire_jobs(jobs, previous, now)
     for j in jobs:
         j['pay'] = extract_pay(j['text'])
         j['brief'] = brief(j['text'])
-        j['replyContacts'] = reply_contacts(j['text'], excluded=[x['url'].split('/')[3] for x in j['sources']])
+        j['replyContacts'] = (j['contacts'] if j.get('digest') else reply_contacts(j['text'], excluded=[x['url'].split('/')[3] for x in j['sources']]))
     for s in statuses:
         own = [j for j in jobs if not j.get('closed') and any(x['url'].split('/')[3].lower() == s['id'].lower() for x in j['sources'])]
         s['newCount'] = sum(j['id'] not in old_ids for j in own)
@@ -406,7 +440,7 @@ def main():
         s['shared7d'] = sum(len(x['channels']) > 1 for x in history)
         s['jobs24h'] = sum(j['date'] >= (now - timedelta(hours=24)).isoformat() for j in own)
         s['latestJobAt'] = max((j['date'] for j in own), default=None)
-    result = {'schemaVersion': 3, 'retentionHours': 24, 'seen': seen, 'sourceLedger': ledger, 'generatedAt': now.isoformat(),
+    result = {'schemaVersion': 4, 'retentionHours': 72, 'lastCleanupAt': now.isoformat() if clean_now else previous.get('lastCleanupAt'), 'seen': seen, 'sourceLedger': ledger, 'generatedAt': now.isoformat(),
               'lastSuccessAt': now.isoformat() if succeeded else previous.get('lastSuccessAt'),
               'newCount': sum(j['id'] not in old_ids and not j.get('closed') for j in jobs),
               'sources': statuses, 'jobs': jobs}
