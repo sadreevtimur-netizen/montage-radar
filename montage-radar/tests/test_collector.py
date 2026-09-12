@@ -131,4 +131,16 @@ class ScheduleAndDigests(unittest.TestCase):
         self.assertEqual(len(expire_jobs([j],{},now,prune=False)[0]),1)
         self.assertEqual(len(expire_jobs([j],{},now,prune=True)[0]),0)
 
+class CrossSourceDuplicates(unittest.TestCase):
+    def test_summary_and_full_post(self):
+        a={'id':'summary','date':'2026-09-10','firstSeenAt':'2026-09-10','digest':True,'text':'Нужен монтаж подкастов YouTube: интервью, работа с цветом, звуком и инфографикой. 4–6 выпусков по 30–60 минут в месяц. Портфолио с горизонтальными видео.','contacts':['@client'],'sources':[{'url':'a'}]}
+        b={**a,'id':'full','date':'2026-09-11','firstSeenAt':'2026-09-11','digest':False,'text':a['text']+' Постоянное сотрудничество. Стоимость обсуждается индивидуально. Присылайте примеры работ.','sources':[{'url':'b'}]}
+        result=deduplicate([a,b]);self.assertEqual(len(result),1);self.assertEqual(len(result[0]['sources']),2)
+        b={**b,'id':'other','text':'Нужен монтаж Reels для магазина. 20 роликов в неделю, 1500 рублей за ролик.'}
+        self.assertEqual(len(deduplicate([a,b])),2)
+    def test_different_budget_not_collapsed(self):
+        a={'id':'a','date':'2026-09-10','digest':True,'text':'Монтаж подкастов: интервью, работа с цветом, звуком и инфографикой. 4 выпуска по 60 минут. Бюджет 5000 рублей.','contacts':['@hr'],'sources':[{'url':'a'}]}
+        b={**a,'id':'b','digest':False,'text':'Монтаж YouTube подкастов: работа с цветом, звуком, интервью, инфографикой и титрами. 4 выпуска по 60 минут. Оплата 1000 рублей.','sources':[{'url':'b'}]}
+        self.assertEqual(len(deduplicate([a,b])),2)
+
 if __name__=='__main__':unittest.main()

@@ -220,6 +220,25 @@ def make_job(post, source, now):
             'formats': formats or ['Монтаж'], 'pay': amounts[:3], 'contacts': [c for c in contacts(text, post['links']) if c.lower() != '@' + source['id'].lower() and not (c.startswith('@') and c.lower().endswith('bot'))],
             'risks': inspect_risks(text), 'sources': [{'name': source['name'], 'url': 'https://t.me/' + post['post']}]}
 
+def same_digest_job(a, b):
+    """Консервативное сопоставление краткой подборки с полным объявлением.
+    Нужны общий контакт, формат, числовые условия и совпадение содержания.
+    Общий HR-контакт без этих признаков недостаточен.
+    """
+    if not (a.get('digest') or b.get('digest')):
+        return False
+    short, full = sorted([a['text'], b['text']], key=len)
+    def words(t):
+        stop = {'вакансия','монтажер','видеомонтажер','монтаж','нужно','ищем','ищут','работа','контакт','требуется','команда','который','ролики','видео'}
+        return {w[:6] for w in normalize(t.replace('ё','е')).split() if len(w)>3 and w not in stop and not w.isdigit()}
+    x,y=words(short),words(full)
+    numbers=set(re.findall(r'\d+',short))
+    formats=[r'подкаст|интервью|talking.head',r'youtube|ютуб',r'reels|рилс|shorts|тикток',r'анимац|motion|моуш']
+    shared_format=any(re.search(p,short,re.I) and re.search(p,full,re.I) for p in formats)
+    return (shared_format and len(numbers)>=2 and numbers <= set(re.findall(r'\d+',full))
+            and len(x)>=8 and len(x&y)/len(x)>=.65)
+
+
 def deduplicate(jobs):
     groups = {}
     for job in sorted(jobs, key=lambda j: (datetime.fromisoformat(j['date']), j.get('checkedAt', '')), reverse=True):
@@ -235,7 +254,7 @@ def deduplicate(jobs):
             for k, other in groups.items():
                 if {c.lower() for c in job['contacts']} & {c.lower() for c in other['contacts']}:
                     b = set(k.split())
-                    if len(a & b) / max(1, len(a | b)) >= .9:
+                    if len(a & b) / max(1, len(a | b)) >= .9 or same_digest_job(job, other):
                         match = k
                         break
         if match is None:
@@ -309,7 +328,7 @@ def merge_observations(previous, fetched, observed_urls, now):
 
 
 def expire_jobs(jobs, previous, now, retention_hours=72, prune=True):
-    """В ленте — сутки. От старых постов храним только отпечаток, чтобы не оживлять перепосты."""
+    """В ленте — три дня. От старых постов храним только отпечаток, чтобы не оживлять перепосты."""
     def fingerprint(j):
         value = normalize(clean_text(j['text'])) + '|' + '|'.join(sorted(c.lower() for c in j['contacts']))
         return hashlib.sha256(value.encode()).hexdigest()
